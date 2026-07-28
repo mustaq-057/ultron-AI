@@ -6,7 +6,7 @@ import {
   Globe, Zap, Brain, Shield, Check
 } from 'lucide-react';
 import { UltronMark, UltronHeroLogo } from '@/components/UltronLogo';
-import { TypewriterText } from '@/components/TypewriterText';
+import { MarkdownContent } from '@/components/MarkdownContent';
 
 const API_BASE = 'http://localhost:3000/api';
 
@@ -37,6 +37,18 @@ export default function ChatPage() {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, streaming]);
 
+  // Load conversations from Neon PostgreSQL DB on mount
+  useEffect(() => {
+    fetch(`${API_BASE}/conversations`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.conversations && Array.isArray(data.conversations)) {
+          setConversations(data.conversations);
+        }
+      })
+      .catch(err => console.error('Failed to load conversations from Neon DB:', err));
+  }, []);
+
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -45,13 +57,21 @@ export default function ChatPage() {
   }, [input]);
 
   const saveConversation = useCallback((convId: string, msgs: Message[]) => {
+    const title = msgs.find(m => m.role === 'user')?.content.slice(0, 50) ?? `Chat ${convCounter}`;
+
     setConversations(prev => {
       const exists = prev.find(c => c.id === convId);
-      const title = msgs.find(m => m.role === 'user')?.content.slice(0, 50) ?? `Chat ${convCounter}`;
       if (exists) return prev.map(c => c.id === convId ? { ...c, messages: msgs, title } : c);
       convCounter++;
       return [{ id: convId, title, messages: msgs }, ...prev];
     });
+
+    // Sync to Neon DB
+    fetch(`${API_BASE}/conversations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: convId, title, messages: msgs }),
+    }).catch(err => console.error('Failed to save conversation to Neon DB:', err));
   }, []);
 
   const send = useCallback(async (text: string) => {
@@ -201,7 +221,12 @@ export default function ChatPage() {
                   <div className="hidden group-hover:flex items-center gap-1 shrink-0 ml-2">
                     <span
                       className="rounded p-0.5 hover:bg-white/10"
-                      onClick={e => { e.stopPropagation(); setConversations(prev => prev.filter(c => c.id !== conv.id)); if (activeConvId === conv.id) newChat(); }}
+                      onClick={e => {
+                        e.stopPropagation();
+                        setConversations(prev => prev.filter(c => c.id !== conv.id));
+                        fetch(`${API_BASE}/conversations/${conv.id}`, { method: 'DELETE' }).catch(err => console.error(err));
+                        if (activeConvId === conv.id) newChat();
+                      }}
                     >
                       <Trash2 className="w-3 h-3" style={{ color: 'rgba(0,229,255,0.45)' }} />
                     </span>
@@ -274,6 +299,7 @@ export default function ChatPage() {
                     message={msg}
                     copiedId={copiedId}
                     onCopy={copyMessage}
+                    onSuggest={send}
                     isStreaming={streaming && idx === messages.length - 1 && msg.role === 'assistant'}
                   />
                 ))}
@@ -341,7 +367,7 @@ export default function ChatPage() {
 }
 
 /* ── MESSAGE ROW ── */
-function MessageRow({ message, copiedId, onCopy, isStreaming }: { message: Message; copiedId: string | null; onCopy: (id: string, content: string) => void; isStreaming?: boolean }) {
+function MessageRow({ message, copiedId, onCopy, isStreaming, onSuggest }: { message: Message; copiedId: string | null; onCopy: (id: string, content: string) => void; isStreaming?: boolean; onSuggest?: (prompt: string) => void }) {
   const isUser = message.role === 'user';
   return (
     <motion.div
@@ -363,10 +389,12 @@ function MessageRow({ message, copiedId, onCopy, isStreaming }: { message: Messa
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold mb-1.5" style={{ color: '#e2eeff' }}>{isUser ? 'You' : 'Ultron'}</div>
-        <div className="text-sm leading-7" style={{ color: '#c8ddff', whiteSpace: 'pre-wrap' }}>
-          {isUser ? message.content : (
+        <div className="text-sm leading-7" style={{ color: '#c8ddff' }}>
+          {isUser ? (
+            <div className="whitespace-pre-wrap">{message.content}</div>
+          ) : (
             message.content
-              ? <TypewriterText text={message.content} speed={8} live={isStreaming} />
+              ? <MarkdownContent content={message.content} live={isStreaming} onSuggest={onSuggest} />
               : <ThinkingDots />
           )}
         </div>
