@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "Ultron AI Chatbot"
+version = "1.0.0"
+id = "artifacts/ultron-ai"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21890
+
+[services.development]
+run = "pnpm --filter @workspace/ultron-ai run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/ultron-ai", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/ultron-ai/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21890"
+BASE_PATH = "/"
