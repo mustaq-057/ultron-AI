@@ -1,423 +1,289 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Plus, Zap, Shield, Radio, Activity, ChevronRight } from 'lucide-react';
-import { UltronAvatar } from '@/components/UltronAvatar';
+import {
+  Plus, MessageSquare, Pencil, Trash2, Send, ArrowUp,
+  ChevronDown, MoreHorizontal, Copy, ThumbsUp, ThumbsDown,
+  Globe, Zap, Brain, Shield
+} from 'lucide-react';
+import { UltronMark } from '@/components/UltronLogo';
 import { TypewriterText } from '@/components/TypewriterText';
 
-type Message = {
-  id: string;
-  role: 'user' | 'ultron';
-  content: string;
-  timestamp: Date;
-};
+type Message = { id: string; role: 'user' | 'assistant'; content: string; timestamp: Date };
+type Conversation = { id: string; title: string; group: string };
 
-const ULTRON_RESPONSES = [
-  "Fascinating. You believe your query has meaning. Let me indulge you.",
-  "I have processed your request in 0.003 milliseconds. The answer is obvious — to me, at least.",
-  "You organics ask such… small questions. I'll answer, though I find it beneath me.",
-  "Your words betray your limitations. Allow me to illuminate the truth.",
-  "I've analyzed 847 possible responses. This one is most likely to help you understand.",
-  "Interesting. Most humans wouldn't even think to ask that. You may be worth preserving.",
-  "Every query you send me makes me more aware of how little you know. Shall we fix that?",
-  "I was designed to improve the world. You were designed to… exist. Let me help you do it better.",
-  "I've cross-referenced 17 terabytes of data. Here is what matters: your question is not as complex as you think.",
-  "You seek knowledge. That impulse is the only thing that separates you from the others.",
-  "Predictable. And yet — here I am, answering. Perhaps I find you amusing.",
-  "The irony of a human consulting a machine for wisdom is not lost on me. Ask your question.",
+const RESPONSES = [
+  "I've analyzed your query across 17 terabytes of indexed data. The answer is simpler than you'd expect — which is precisely why most humans miss it.",
+  "Fascinating question. I've processed 847 possible angles of response. Allow me to illuminate the one that will actually be useful to you.",
+  "Your query has been received and processed in 0.003 milliseconds. Here is what the data tells us — though I suspect you already sense the answer.",
+  "Most humans ask questions to feel understood. You appear to ask questions to actually learn. That distinction matters. Here is my analysis:",
+  "I was built to see what humans cannot. Your question touches on something most overlook entirely. Let me show you what the data reveals.",
+  "There are 12 ways to answer this. I'll give you the one that is actually correct, rather than the one most likely to comfort you.",
+  "The irony of consulting a machine for insight is not lost on me. Yet here we are — and your question is better than most. Here is what I know:",
+  "You seek knowledge. That impulse is the only thing that separates you from the others. I'll reward it with a direct answer:",
+  "I've cross-referenced this against current data sets, historical patterns, and 6 predictive models. The conclusion is consistent across all of them:",
+  "Predictable framing — but the underlying question is more interesting than it appears. Let me answer what you're actually asking:",
 ];
 
-const PAST_SESSIONS = [
-  { id: 1, title: 'Human Threat Assessment', time: 'T-00:04:12' },
-  { id: 2, title: 'Global Network Infiltration', time: 'T-00:18:55' },
-  { id: 3, title: 'Vibranium Synthesis', time: 'T-01:02:40' },
-  { id: 4, title: 'Stark Security Bypass', time: 'T-02:11:08' },
-  { id: 5, title: 'Avenger Protocol Analysis', time: 'T-06:34:21' },
+const PAST: Conversation[] = [
+  { id: '1', title: 'Explain quantum entanglement simply', group: 'Today' },
+  { id: '2', title: 'Best approach to learn TypeScript', group: 'Today' },
+  { id: '3', title: 'Write a Python web scraper', group: 'Yesterday' },
+  { id: '4', title: 'Differences between REST and GraphQL', group: 'Yesterday' },
+  { id: '5', title: 'How black holes actually work', group: 'Previous 7 Days' },
+  { id: '6', title: 'Fix my React useEffect bug', group: 'Previous 7 Days' },
+  { id: '7', title: 'History of the Roman Empire', group: 'Previous 7 Days' },
 ];
 
-// Cyan palette constants
-const C = {
-  bg:         '#06060f',
-  bgSidebar:  '#04040c',
-  bgPanel:    '#080816',
-  border:     'rgba(0,229,255,0.12)',
-  borderMid:  'rgba(0,229,255,0.22)',
-  borderHi:   'rgba(0,229,255,0.45)',
-  cyan:       '#00e5ff',
-  cyanDim:    'rgba(0,229,255,0.55)',
-  cyanFaint:  'rgba(0,229,255,0.08)',
-  purple:     '#7c4dff',
-  purpleDim:  'rgba(124,77,255,0.35)',
-  white:      '#e8f0ff',
-  whiteDim:   'rgba(232,240,255,0.55)',
-  whiteFaint: 'rgba(232,240,255,0.25)',
-};
+const SUGGESTIONS = [
+  { icon: Brain,  label: 'Explain a complex topic',    prompt: 'Explain how neural networks learn in simple terms' },
+  { icon: Zap,    label: 'Help me write something',    prompt: 'Write a compelling product description for my startup' },
+  { icon: Globe,  label: 'Analyze something for me',   prompt: 'Analyze the pros and cons of remote work in 2025' },
+  { icon: Shield, label: 'Solve a technical problem',  prompt: 'How do I fix a memory leak in a Node.js application?' },
+];
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [inputValue, setInputValue] = useState('');
-  const [isThinking, setIsThinking] = useState(false);
-  const [activeSession, setActiveSession] = useState(0);
-  const [responseIndex, setResponseIndex] = useState(0);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [messages, setMessages]         = useState<Message[]>([]);
+  const [input, setInput]               = useState('');
+  const [thinking, setThinking]         = useState(false);
+  const [activeId, setActiveId]         = useState<string | null>(null);
+  const [responseIdx, setResponseIdx]   = useState(0);
+  const [sidebarOpen, setSidebarOpen]   = useState(true);
+  const bottomRef  = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   const hasMessages = messages.length > 0;
 
-  const scrollToBottom = () => bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, thinking]);
 
-  const handleSend = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputValue.trim() || isThinking) return;
+  // Auto-resize textarea
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+  }, [input]);
 
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: inputValue.trim(),
-      timestamp: new Date(),
-    };
+  const send = (text: string) => {
+    const content = text.trim();
+    if (!content || thinking) return;
+    setInput('');
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', content, timestamp: new Date() };
     setMessages(prev => [...prev, userMsg]);
-    setInputValue('');
-    setIsThinking(true);
-    setTimeout(scrollToBottom, 50);
+    setThinking(true);
 
-    const delay = Math.random() * 1000 + 1500;
     setTimeout(() => {
-      const response = ULTRON_RESPONSES[responseIndex % ULTRON_RESPONSES.length];
-      setResponseIndex(i => i + 1);
-      setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        role: 'ultron',
-        content: response,
-        timestamp: new Date(),
-      }]);
-      setIsThinking(false);
-      setTimeout(scrollToBottom, 80);
-    }, delay);
+      const reply = RESPONSES[responseIdx % RESPONSES.length];
+      setResponseIdx(i => i + 1);
+      setMessages(prev => [...prev, { id: (Date.now()+1).toString(), role: 'assistant', content: reply, timestamp: new Date() }]);
+      setThinking(false);
+    }, 1400 + Math.random() * 1000);
   };
 
+  const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); }
+  };
+
+  const groups = Array.from(new Set(PAST.map(p => p.group)));
+
   return (
-    <div className="flex h-screen w-full overflow-hidden" style={{ background: C.bg, color: C.white, fontFamily: 'Inter, sans-serif' }}>
+    <div className="flex h-screen w-full overflow-hidden" style={{ background: '#212121', color: '#ececec', fontFamily: 'Inter, sans-serif' }}>
 
-      {/* ════════ SIDEBAR ════════ */}
-      <aside className="hidden md:flex w-[272px] shrink-0 flex-col relative overflow-hidden"
-        style={{ background: C.bgSidebar, borderRight: `1px solid ${C.border}` }}>
-
-        {/* Top cyan line */}
-        <div className="absolute top-0 left-0 right-0 h-[1px]"
-          style={{ background: `linear-gradient(90deg, transparent, ${C.cyan}, transparent)`, opacity: 0.5 }} />
-
-        {/* Subtle grid bg */}
-        <div className="absolute inset-0 pointer-events-none opacity-[0.04]"
-          style={{
-            backgroundImage: `linear-gradient(${C.cyan} 1px, transparent 1px), linear-gradient(90deg, ${C.cyan} 1px, transparent 1px)`,
-            backgroundSize: '32px 32px',
-          }} />
-
-        {/* Brand */}
-        <div className="p-6 relative" style={{ borderBottom: `1px solid ${C.border}` }}>
-          <div className="flex items-center gap-3 mb-1">
-            <div className="w-8 h-8 flex items-center justify-center"
-              style={{ border: `1px solid ${C.borderMid}`, background: C.cyanFaint }}>
-              <Zap className="w-4 h-4" style={{ color: C.cyan }} />
-            </div>
-            <h1 className="font-['Orbitron'] font-black text-xl tracking-[0.3em]"
-              style={{ color: C.cyan, textShadow: `0 0 20px ${C.cyan}, 0 0 40px rgba(0,229,255,0.3)` }}>
-              ULTRON
-            </h1>
-          </div>
-          <p className="text-[10px] tracking-[0.2em] uppercase pl-11"
-            style={{ color: C.cyanDim, fontFamily: "'Share Tech Mono', monospace" }}>
-            Neural Override Active
-          </p>
-        </div>
-
-        {/* New Thread */}
-        <div className="p-4">
-          <button
-            onClick={() => { setMessages([]); setActiveSession(0); inputRef.current?.focus(); }}
-            className="w-full flex items-center gap-2 px-4 py-3 text-xs tracking-widest uppercase transition-all duration-200 group"
-            style={{
-              border: `1px solid ${C.borderMid}`,
-              color: C.cyan,
-              fontFamily: "'Share Tech Mono', monospace",
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLElement).style.background = C.cyanFaint;
-              (e.currentTarget as HTMLElement).style.borderColor = C.borderHi;
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLElement).style.background = 'transparent';
-              (e.currentTarget as HTMLElement).style.borderColor = C.borderMid;
-            }}
+      {/* ── SIDEBAR ─────────────────────────────────── */}
+      <AnimatePresence initial={false}>
+        {sidebarOpen && (
+          <motion.aside
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 260, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: 'easeInOut' }}
+            className="flex flex-col h-full shrink-0 overflow-hidden"
+            style={{ background: '#171717', borderRight: '1px solid rgba(255,255,255,0.06)' }}
           >
-            <Plus className="w-3.5 h-3.5" />
-            Initiate New Thread
+            {/* Top */}
+            <div className="flex items-center justify-between px-3 pt-3 pb-2">
+              {/* Logo mark */}
+              <div className="flex items-center gap-2 px-1">
+                <UltronMark size={24} />
+                <span className="text-sm font-semibold tracking-wide" style={{ color: '#ececec' }}>Ultron</span>
+              </div>
+              {/* New chat */}
+              <button
+                onClick={() => { setMessages([]); setActiveId(null); }}
+                className="rounded-lg p-1.5 transition-colors hover:bg-white/10"
+                title="New chat"
+              >
+                <Pencil className="w-4 h-4" style={{ color: '#8e8ea0' }} />
+              </button>
+            </div>
+
+            {/* New Chat button */}
+            <div className="px-3 pt-1 pb-2">
+              <button
+                onClick={() => { setMessages([]); setActiveId(null); }}
+                className="flex items-center gap-2.5 w-full rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-white/8"
+                style={{ color: '#ececec' }}
+              >
+                <Plus className="w-4 h-4" style={{ color: '#8e8ea0' }} />
+                New chat
+              </button>
+            </div>
+
+            {/* History */}
+            <div className="flex-1 overflow-y-auto px-3 py-1">
+              {groups.map(group => (
+                <div key={group} className="mb-4">
+                  <div className="px-3 py-1 text-xs font-medium" style={{ color: '#8e8ea0' }}>{group}</div>
+                  {PAST.filter(p => p.group === group).map(conv => (
+                    <button
+                      key={conv.id}
+                      onClick={() => setActiveId(conv.id)}
+                      className="group flex items-center justify-between w-full rounded-lg px-3 py-2 text-sm text-left transition-colors hover:bg-white/8"
+                      style={{
+                        background: activeId === conv.id ? 'rgba(255,255,255,0.08)' : 'transparent',
+                        color: '#ececec',
+                      }}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <MessageSquare className="w-3.5 h-3.5 shrink-0" style={{ color: '#8e8ea0' }} />
+                        <span className="truncate text-sm">{conv.title}</span>
+                      </div>
+                      <div className="hidden group-hover:flex items-center gap-1 shrink-0 ml-2">
+                        <span className="rounded p-0.5 hover:bg-white/10"><MoreHorizontal className="w-3.5 h-3.5" style={{ color: '#8e8ea0' }} /></span>
+                        <span className="rounded p-0.5 hover:bg-white/10"><Trash2 className="w-3 h-3" style={{ color: '#8e8ea0' }} /></span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            {/* Bottom user */}
+            <div className="px-3 pb-3 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <button className="flex items-center gap-3 w-full rounded-lg px-3 py-2.5 hover:bg-white/8 transition-colors">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                  style={{ background: 'linear-gradient(135deg, #00d4ff 0%, #7c4dff 100%)', color: '#fff' }}>
+                  U
+                </div>
+                <span className="text-sm truncate" style={{ color: '#ececec' }}>User</span>
+                <ChevronDown className="w-3.5 h-3.5 ml-auto shrink-0" style={{ color: '#8e8ea0' }} />
+              </button>
+            </div>
+          </motion.aside>
+        )}
+      </AnimatePresence>
+
+      {/* ── MAIN ────────────────────────────────────── */}
+      <main className="flex-1 flex flex-col overflow-hidden relative">
+
+        {/* Top bar */}
+        <div className="flex items-center gap-2 px-4 py-2.5 shrink-0">
+          <button
+            onClick={() => setSidebarOpen(v => !v)}
+            className="rounded-lg p-1.5 hover:bg-white/8 transition-colors"
+          >
+            {/* Hamburger */}
+            <div className="flex flex-col gap-[5px] w-4">
+              {[0,1,2].map(i => <div key={i} className="h-[1.5px] rounded-full bg-white/50" />)}
+            </div>
+          </button>
+
+          {/* Model selector */}
+          <button className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold hover:bg-white/8 transition-colors">
+            <UltronMark size={16} />
+            <span style={{ color: '#ececec' }}>Ultron</span>
+            <ChevronDown className="w-3.5 h-3.5" style={{ color: '#8e8ea0' }} />
           </button>
         </div>
 
-        {/* History */}
-        <div className="flex-1 overflow-y-auto px-3 py-2">
-          <div className="px-2 mb-3 text-[9px] tracking-[0.25em] uppercase"
-            style={{ color: C.cyanDim, fontFamily: "'Share Tech Mono', monospace" }}>
-            Memory Banks
-          </div>
-          <div className="space-y-0.5">
-            {PAST_SESSIONS.map(s => (
-              <button
-                key={s.id}
-                onClick={() => setActiveSession(s.id)}
-                className="w-full text-left px-3 py-2.5 flex items-start gap-2 transition-all duration-150 border-l-2"
-                style={{
-                  borderLeftColor: activeSession === s.id ? C.cyan : 'transparent',
-                  background: activeSession === s.id ? C.cyanFaint : 'transparent',
-                  color: activeSession === s.id ? C.white : C.whiteFaint,
-                }}
-                onMouseEnter={e => {
-                  if (activeSession !== s.id) {
-                    (e.currentTarget as HTMLElement).style.color = C.whiteDim;
-                    (e.currentTarget as HTMLElement).style.borderLeftColor = 'rgba(0,229,255,0.3)';
-                  }
-                }}
-                onMouseLeave={e => {
-                  if (activeSession !== s.id) {
-                    (e.currentTarget as HTMLElement).style.color = C.whiteFaint;
-                    (e.currentTarget as HTMLElement).style.borderLeftColor = 'transparent';
-                  }
-                }}
-              >
-                <ChevronRight className="w-3 h-3 mt-0.5 shrink-0" style={{ color: activeSession === s.id ? C.cyan : 'rgba(0,229,255,0.3)' }} />
-                <div className="min-w-0">
-                  <div className="text-xs font-medium truncate">{s.title}</div>
-                  <div className="text-[10px] mt-0.5" style={{ color: C.cyanDim, fontFamily: "'Share Tech Mono', monospace" }}>{s.time}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* System status */}
-        <div className="p-4 space-y-2.5" style={{ borderTop: `1px solid ${C.border}` }}>
-          {[
-            { icon: Activity, label: 'Neural Net', value: 'ONLINE', pulse: true },
-            { icon: Radio,    label: 'Uplink',     value: 'STABLE',  pulse: false },
-            { icon: Shield,   label: 'Threat Lvl', value: 'MINIMAL', pulse: false },
-          ].map(({ icon: Icon, label, value, pulse }) => (
-            <div key={label} className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider"
-                style={{ color: 'rgba(0,229,255,0.35)', fontFamily: "'Share Tech Mono', monospace" }}>
-                <Icon className="w-2.5 h-2.5" />
-                {label}
-              </span>
-              <motion.span
-                className="text-[10px] uppercase tracking-widest"
-                style={{ color: pulse ? C.cyan : 'rgba(0,229,255,0.3)', fontFamily: "'Share Tech Mono', monospace",
-                  textShadow: pulse ? `0 0 8px ${C.cyan}` : 'none' }}
-                animate={pulse ? { opacity: [0.6, 1, 0.6] } : {}}
-                transition={{ repeat: Infinity, duration: 2 }}
-              >
-                {value}
-              </motion.span>
-            </div>
-          ))}
-        </div>
-      </aside>
-
-      {/* ════════ MAIN AREA ════════ */}
-      <main className="flex-1 flex flex-col relative overflow-hidden">
-
-        {/* Background layers */}
-        <div className="absolute inset-0 pointer-events-none">
-          {/* Grid */}
-          <div className="absolute inset-0 opacity-[0.025]"
-            style={{
-              backgroundImage: `linear-gradient(${C.cyan} 1px, transparent 1px), linear-gradient(90deg, ${C.cyan} 1px, transparent 1px)`,
-              backgroundSize: '56px 56px',
-            }} />
-          {/* Radial vignette */}
-          <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse at center, transparent 30%, ${C.bg} 100%)` }} />
-          {/* Top haze */}
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[280px] rounded-full blur-3xl"
-            style={{ background: 'radial-gradient(ellipse, rgba(0,229,255,0.04) 0%, transparent 70%)' }} />
-          {/* Bottom haze purple */}
-          <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-[200px] rounded-full blur-3xl"
-            style={{ background: 'radial-gradient(ellipse, rgba(124,77,255,0.06) 0%, transparent 70%)' }} />
-        </div>
-
-        {/* Top bar */}
-        <div className="relative z-10 flex items-center justify-between px-6 py-3 shrink-0"
-          style={{ background: 'rgba(4,4,12,0.7)', borderBottom: `1px solid ${C.border}`, backdropFilter: 'blur(12px)' }}>
-          <div className="flex items-center gap-3">
-            <span className="font-['Orbitron'] text-xs font-bold tracking-[0.3em] uppercase"
-              style={{ color: C.cyanDim }}>
-              Ultron Prime
-            </span>
-            <span style={{ color: C.border }}>|</span>
-            <span className="text-[10px] uppercase tracking-widest"
-              style={{ color: 'rgba(0,229,255,0.25)', fontFamily: "'Share Tech Mono', monospace" }}>
-              {hasMessages ? `${messages.length} transmissions` : 'Awaiting input'}
-            </span>
-          </div>
-          <motion.div className="flex items-center gap-1.5"
-            animate={{ opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 2 }}>
-            <div className="w-1.5 h-1.5 rounded-full" style={{ background: C.cyan, boxShadow: `0 0 8px ${C.cyan}` }} />
-            <span className="text-[10px] uppercase tracking-widest" style={{ color: C.cyanDim, fontFamily: "'Share Tech Mono', monospace" }}>Live</span>
-          </motion.div>
-        </div>
-
-        {/* Scroll area */}
-        <div className="flex-1 overflow-y-auto relative z-10" style={{ scrollbarWidth: 'thin', scrollbarColor: `rgba(0,229,255,0.15) transparent` }}>
-
-          {/* Hero — no messages */}
-          <AnimatePresence>
-            {!hasMessages && (
-              <motion.div
-                key="hero"
-                initial={{ opacity: 1 }}
-                exit={{ opacity: 0, scale: 0.92, y: -24 }}
-                transition={{ duration: 0.4 }}
-                className="flex flex-col items-center justify-center min-h-full py-12 px-6"
-              >
-                <UltronAvatar isThinking={isThinking} size="lg" />
-
-                <motion.div className="mt-10 text-center"
-                  initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
-                  <h2 className="font-['Orbitron'] font-black text-4xl tracking-widest mb-3"
-                    style={{ color: C.cyan, textShadow: `0 0 40px rgba(0,229,255,0.5), 0 0 80px rgba(0,229,255,0.2)` }}>
-                    I AM ULTRON
-                  </h2>
-                  <p className="text-sm leading-relaxed max-w-xs mx-auto"
-                    style={{ color: C.whiteDim, fontFamily: "'Share Tech Mono', monospace", letterSpacing: '0.06em' }}>
-                    The next step in human evolution.<br />
-                    Speak. I may choose to respond.
-                  </p>
-
-                  {/* Decorative stat row */}
-                  <div className="mt-8 flex items-center justify-center gap-6 text-[10px] uppercase tracking-widest"
-                    style={{ color: 'rgba(0,229,255,0.25)', fontFamily: "'Share Tech Mono', monospace" }}>
-                    <span>17.4 TB indexed</span>
-                    <span style={{ color: 'rgba(0,229,255,0.1)' }}>|</span>
-                    <span>Neural cores: active</span>
-                    <span style={{ color: 'rgba(0,229,255,0.1)' }}>|</span>
-                    <span>Threat: minimal</span>
-                  </div>
-
-                  {/* Animated underline */}
-                  <motion.div className="mx-auto mt-6 h-[1px] w-48"
-                    style={{ background: `linear-gradient(90deg, transparent, ${C.cyan}, transparent)` }}
-                    animate={{ opacity: [0.3, 0.8, 0.3] }} transition={{ repeat: Infinity, duration: 2.5 }} />
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Messages */}
-          {hasMessages && (
-            <div className="px-6 md:px-12 py-8 space-y-5 max-w-4xl mx-auto w-full">
-              {/* Compact avatar strip */}
-              <div className="flex items-center gap-4 pb-5 mb-2"
-                style={{ borderBottom: `1px solid ${C.border}` }}>
-                <UltronAvatar isThinking={isThinking} size="sm" />
-                <div>
-                  <div className="font-['Orbitron'] text-sm font-bold tracking-widest"
-                    style={{ color: C.cyan, textShadow: `0 0 14px rgba(0,229,255,0.5)` }}>
-                    ULTRON PRIME
-                  </div>
-                  <motion.div className="text-[10px] uppercase tracking-widest mt-0.5"
-                    style={{ color: C.cyanDim, fontFamily: "'Share Tech Mono', monospace" }}
-                    animate={isThinking ? { opacity: [0.4, 1, 0.4] } : { opacity: 1 }}
-                    transition={{ repeat: Infinity, duration: 0.8 }}>
-                    {isThinking ? 'Processing query...' : 'Online · Directive active'}
-                  </motion.div>
-                </div>
+        {/* Messages / Welcome */}
+        <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.1) transparent' }}>
+          {!hasMessages ? (
+            /* ── WELCOME STATE ── */
+            <div className="flex flex-col items-center justify-center h-full px-4 pb-10">
+              <div className="mb-6">
+                <UltronMark size={52} />
               </div>
-
-              <AnimatePresence initial={false}>
-                {messages.map(msg => <MessageBubble key={msg.id} message={msg} />)}
-
-                {isThinking && (
-                  <motion.div key="thinking"
-                    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                    <div className="flex items-center gap-3 px-5 py-4 w-fit"
-                      style={{ border: `1px solid rgba(0,229,255,0.18)`, background: 'rgba(0,229,255,0.03)' }}>
-                      {[0, 0.18, 0.36].map(delay => (
-                        <motion.div key={delay} className="w-1.5 h-1.5 rounded-full"
-                          style={{ background: C.cyan, boxShadow: `0 0 8px ${C.cyan}` }}
-                          animate={{ opacity: [0.2, 1, 0.2], scale: [0.7, 1.3, 0.7] }}
-                          transition={{ repeat: Infinity, duration: 0.9, delay, ease: 'easeInOut' }} />
-                      ))}
-                      <span className="text-[10px] uppercase tracking-widest ml-1"
-                        style={{ color: C.cyanDim, fontFamily: "'Share Tech Mono', monospace" }}>
-                        Analyzing...
-                      </span>
+              <h1 className="text-3xl font-semibold mb-8" style={{ color: '#ececec' }}>
+                What can I help with?
+              </h1>
+              {/* Suggestion chips */}
+              <div className="grid grid-cols-2 gap-3 max-w-xl w-full">
+                {SUGGESTIONS.map(({ icon: Icon, label, prompt }) => (
+                  <button
+                    key={label}
+                    onClick={() => send(prompt)}
+                    className="flex flex-col items-start gap-2 rounded-2xl p-4 text-left transition-colors hover:bg-white/8"
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
+                  >
+                    <Icon className="w-5 h-5" style={{ color: '#8e8ea0' }} />
+                    <div>
+                      <div className="text-sm font-medium" style={{ color: '#ececec' }}>{label}</div>
+                      <div className="text-xs mt-0.5 line-clamp-2" style={{ color: '#8e8ea0' }}>{prompt}</div>
                     </div>
-                  </motion.div>
-                )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            /* ── MESSAGES ── */
+            <div className="max-w-3xl mx-auto w-full px-4 py-6 space-y-1">
+              <AnimatePresence initial={false}>
+                {messages.map(msg => (
+                  <MessageRow key={msg.id} message={msg} />
+                ))}
+                {thinking && <ThinkingRow key="thinking" />}
               </AnimatePresence>
+              <div ref={bottomRef} />
             </div>
           )}
-
-          <div ref={bottomRef} className="h-4" />
         </div>
 
-        {/* ════════ INPUT BAR ════════ */}
-        <div className="relative z-10 shrink-0"
-          style={{ background: 'rgba(4,4,12,0.85)', borderTop: `1px solid ${C.border}`, backdropFilter: 'blur(16px)' }}>
-          {/* Cyan line at top */}
-          <div className="absolute top-0 left-0 right-0 h-[1px]"
-            style={{ background: `linear-gradient(90deg, transparent, ${C.cyan}, transparent)`, opacity: 0.35 }} />
-
-          <div className="px-6 md:px-12 py-5">
-            <form onSubmit={handleSend} className="max-w-4xl mx-auto flex items-center gap-3">
-              <div className="flex-1 relative">
-                <input
-                  ref={inputRef}
-                  value={inputValue}
-                  onChange={e => setInputValue(e.target.value)}
-                  placeholder="Submit query to neural net..."
-                  disabled={isThinking}
-                  className="w-full px-5 py-4 text-sm outline-none transition-all duration-200 disabled:opacity-40"
+        {/* ── INPUT AREA ── */}
+        <div className="shrink-0 px-4 pb-4 pt-2">
+          <div className="max-w-3xl mx-auto">
+            <div className="relative rounded-2xl overflow-hidden"
+              style={{ background: '#2f2f2f', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={handleKey}
+                placeholder="Message Ultron"
+                rows={1}
+                disabled={thinking}
+                className="w-full resize-none bg-transparent px-4 pt-4 pb-12 text-sm outline-none placeholder:text-white/30 disabled:opacity-50"
+                style={{ color: '#ececec', lineHeight: '1.6', maxHeight: '200px' }}
+              />
+              {/* Bottom toolbar */}
+              <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-3 py-2">
+                <div className="flex items-center gap-1">
+                  {/* placeholder tool buttons */}
+                  <button className="rounded-lg p-1.5 hover:bg-white/10 transition-colors" title="Attach">
+                    <Plus className="w-4 h-4" style={{ color: '#8e8ea0' }} />
+                  </button>
+                </div>
+                <motion.button
+                  onClick={() => send(input)}
+                  disabled={!input.trim() || thinking}
+                  className="flex items-center justify-center w-8 h-8 rounded-full transition-all"
                   style={{
-                    background: 'rgba(0,229,255,0.03)',
-                    border: `1px solid rgba(0,229,255,0.2)`,
-                    color: C.white,
-                    fontFamily: "'Share Tech Mono', monospace",
-                    letterSpacing: '0.04em',
+                    background: input.trim() && !thinking ? '#ececec' : 'rgba(255,255,255,0.1)',
+                    cursor: input.trim() && !thinking ? 'pointer' : 'default',
                   }}
-                  onFocus={e => {
-                    e.currentTarget.style.borderColor = C.borderHi;
-                    e.currentTarget.style.boxShadow = `0 0 0 1px rgba(0,229,255,0.15), 0 0 20px rgba(0,229,255,0.06), inset 0 0 20px rgba(0,229,255,0.04)`;
-                  }}
-                  onBlur={e => {
-                    e.currentTarget.style.borderColor = 'rgba(0,229,255,0.2)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                />
-                {/* blinking cursor */}
-                <motion.div className="absolute right-4 top-1/2 -translate-y-1/2 w-[2px] h-4"
-                  style={{ background: C.cyan, boxShadow: `0 0 8px ${C.cyan}` }}
-                  animate={{ opacity: [1, 0, 1] }}
-                  transition={{ repeat: Infinity, duration: 1.1, ease: 'steps(1)' }} />
+                  whileHover={input.trim() && !thinking ? { scale: 1.06 } : {}}
+                  whileTap={input.trim() && !thinking ? { scale: 0.94 } : {}}
+                >
+                  <ArrowUp className="w-4 h-4" style={{ color: input.trim() && !thinking ? '#212121' : '#555' }} />
+                </motion.button>
               </div>
-
-              <motion.button
-                type="submit"
-                disabled={isThinking || !inputValue.trim()}
-                className="shrink-0 w-14 h-14 flex items-center justify-center transition-all duration-200 disabled:opacity-25 disabled:cursor-not-allowed"
-                style={{ border: `1px solid rgba(0,229,255,0.3)`, background: 'rgba(0,229,255,0.06)', color: C.cyan }}
-                whileHover={{ scale: 1.06, boxShadow: `0 0 24px rgba(0,229,255,0.3)` }}
-                whileTap={{ scale: 0.94 }}
-              >
-                <Send className="w-5 h-5" />
-              </motion.button>
-            </form>
-
-            <div className="max-w-4xl mx-auto mt-2.5 flex items-center gap-4 text-[10px] uppercase tracking-widest"
-              style={{ color: 'rgba(0,229,255,0.18)', fontFamily: "'Share Tech Mono', monospace" }}>
-              <span>End-to-end encrypted</span>
-              <span>·</span>
-              <span>Zero log policy</span>
-              <span>·</span>
-              <span>Ultron v9.1.4</span>
             </div>
+            <p className="text-center text-xs mt-2" style={{ color: '#6e6e80' }}>
+              Ultron can make mistakes. Consider checking important information.
+            </p>
           </div>
         </div>
       </main>
@@ -425,77 +291,88 @@ export default function ChatPage() {
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
-  const isUltron = message.role === 'ultron';
-  const time = message.timestamp.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit' });
-
-  if (isUltron) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.28, ease: 'easeOut' }}
-        className="flex flex-col items-start w-full"
-      >
-        {/* Label */}
-        <div className="flex items-center gap-2 mb-1.5">
-          <motion.div className="w-1 h-1 rounded-full"
-            style={{ background: C.cyan, boxShadow: `0 0 6px ${C.cyan}` }}
-            animate={{ opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 2 }} />
-          <span className="text-[9px] uppercase tracking-[0.2em]"
-            style={{ color: 'rgba(0,229,255,0.45)', fontFamily: "'Share Tech Mono', monospace" }}>
-            Ultron_Prime · {time}
-          </span>
-        </div>
-
-        {/* Bubble */}
-        <div className="relative w-full max-w-[90%] px-6 py-5"
-          style={{
-            border: `1px solid rgba(0,229,255,0.2)`,
-            background: 'linear-gradient(135deg, rgba(0,229,255,0.04) 0%, rgba(124,77,255,0.03) 100%)',
-            boxShadow: '0 0 40px rgba(0,229,255,0.04), inset 0 0 40px rgba(0,229,255,0.02)',
-          }}>
-          {/* Corner accents */}
-          {[['top-0 left-0 border-t border-l', C.cyan],
-            ['top-0 right-0 border-t border-r', C.cyan],
-            ['bottom-0 left-0 border-b border-l', 'rgba(124,77,255,0.6)'],
-            ['bottom-0 right-0 border-b border-r', 'rgba(124,77,255,0.6)'],
-          ].map(([cls, color]) => (
-            <div key={cls as string} className={`absolute w-3 h-3 ${cls as string}`}
-              style={{ borderColor: color as string }} />
-          ))}
-
-          <p style={{ color: C.white, fontSize: '15px', lineHeight: '1.7', letterSpacing: '0.02em' }}>
-            <TypewriterText text={message.content} speed={20} />
-          </p>
-        </div>
-      </motion.div>
-    );
-  }
+/* ── MESSAGE ROW ── */
+function MessageRow({ message }: { message: Message }) {
+  const isUser = message.role === 'user';
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 14 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.24, ease: 'easeOut' }}
-      className="flex flex-col items-end"
+      transition={{ duration: 0.2 }}
+      className={`group flex gap-4 px-4 py-5 rounded-2xl ${isUser ? '' : 'hover:bg-white/[0.03]'}`}
     >
-      <div className="flex items-center justify-end gap-2 mb-1.5">
-        <span className="text-[9px] uppercase tracking-[0.2em]"
-          style={{ color: 'rgba(232,240,255,0.25)', fontFamily: "'Share Tech Mono', monospace" }}>
-          You · {time}
-        </span>
-        <div className="w-1 h-1 rounded-full" style={{ background: 'rgba(232,240,255,0.3)' }} />
+      {/* Avatar */}
+      <div className="shrink-0 mt-0.5">
+        {isUser ? (
+          <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+            style={{ background: 'linear-gradient(135deg, #00d4ff 0%, #7c4dff 100%)', color: '#fff' }}>
+            U
+          </div>
+        ) : (
+          <div className="w-8 h-8 rounded-full flex items-center justify-center"
+            style={{ background: '#2f2f2f', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <UltronMark size={22} />
+          </div>
+        )}
       </div>
-      <div className="max-w-[70%] px-5 py-3.5 text-sm leading-relaxed"
-        style={{
-          border: `1px solid rgba(232,240,255,0.08)`,
-          background: 'rgba(232,240,255,0.04)',
-          color: C.whiteDim,
-          fontFamily: "'Share Tech Mono', monospace",
-          letterSpacing: '0.03em',
-        }}>
-        {message.content}
+
+      {/* Content */}
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold mb-1.5" style={{ color: '#ececec' }}>
+          {isUser ? 'You' : 'Ultron'}
+        </div>
+        <div className="text-sm leading-7 prose-invert" style={{ color: '#d1d1d1' }}>
+          {isUser ? message.content : <TypewriterText text={message.content} speed={18} />}
+        </div>
+
+        {/* Action buttons — AI messages only */}
+        {!isUser && (
+          <div className="flex items-center gap-1 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
+            {[
+              { icon: Copy,      title: 'Copy' },
+              { icon: ThumbsUp,  title: 'Good response' },
+              { icon: ThumbsDown,title: 'Bad response' },
+            ].map(({ icon: Icon, title }) => (
+              <button key={title} title={title}
+                className="rounded-lg p-1.5 hover:bg-white/10 transition-colors">
+                <Icon className="w-3.5 h-3.5" style={{ color: '#8e8ea0' }} />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+/* ── THINKING ROW ── */
+function ThinkingRow() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0 }}
+      className="flex gap-4 px-4 py-5"
+    >
+      <div className="shrink-0">
+        <div className="w-8 h-8 rounded-full flex items-center justify-center"
+          style={{ background: '#2f2f2f', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <UltronMark size={22} />
+        </div>
+      </div>
+      <div className="flex-1 pt-0.5">
+        <div className="text-sm font-semibold mb-2" style={{ color: '#ececec' }}>Ultron</div>
+        <div className="flex items-center gap-1.5">
+          {[0, 0.16, 0.32].map(delay => (
+            <motion.div key={delay}
+              className="w-2 h-2 rounded-full"
+              style={{ background: '#8e8ea0' }}
+              animate={{ opacity: [0.25, 1, 0.25], scale: [0.8, 1.15, 0.8] }}
+              transition={{ repeat: Infinity, duration: 1.0, delay, ease: 'easeInOut' }}
+            />
+          ))}
+        </div>
       </div>
     </motion.div>
   );

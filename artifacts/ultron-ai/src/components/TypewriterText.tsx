@@ -23,18 +23,11 @@ export function TypewriterText({ text, speed = 20 }: { text: string, speed?: num
   }, [text, speed]);
 
   return (
-    <div className="relative w-full">
-      {/* Invisible full text to reserve layout space */}
-      <div className="opacity-0 pointer-events-none select-none" aria-hidden="true">
-        {text}
-      </div>
-      {/* Absolute positioned typing text */}
-      <div className="absolute top-0 left-0 w-full h-full">
-        {displayedText}
-        {isTyping && (
-          <span className="animate-pulse opacity-50 bg-primary w-[8px] h-[1em] inline-block ml-1 align-middle translate-y-[-1px]" />
-        )}
-      </div>
-    </div>
+    <span className="relative">
+      {displayedText}
+      {isTyping && (
+        <span className="animate-pulse opacity-60 bg-current w-[2px] h-[1em] inline-block ml-[2px] align-middle" />
+      )}
+    </span>
   );
 }
