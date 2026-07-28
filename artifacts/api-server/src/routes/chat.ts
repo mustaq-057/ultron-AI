@@ -1,6 +1,7 @@
 import { Router } from "express";
 import OpenAI from "openai";
 import pg from "pg";
+import google from "googlethis";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -140,7 +141,7 @@ router.delete("/conversations/:id", async (req, res) => {
 
 // POST /api/chat/stream — Server-Sent Events streaming using Groq
 router.post("/chat/stream", async (req, res) => {
-  const { messages } = req.body as { messages: ChatMessage[] };
+  const { messages, mode } = req.body as { messages: ChatMessage[]; mode?: string };
 
   if (!Array.isArray(messages) || messages.length === 0) {
     res.status(400).json({ error: "messages array is required" });
@@ -158,10 +159,32 @@ router.post("/chat/stream", async (req, res) => {
   };
 
   try {
+    let currentSystemPrompt = SYSTEM_PROMPT;
+
+    if (mode === "deepsearch") {
+      const lastUserMessage = messages[messages.length - 1]?.content;
+      if (lastUserMessage) {
+        send({ type: "delta", content: "*Initiating DeepSearch Protocol...*\n" });
+        try {
+          const response = await google.search(lastUserMessage, { page: 0, safe: false, parse_ads: false });
+          const searchResults = response.results.slice(0, 5).map(r => `${r.title}\n${r.description}\n${r.url}`).join('\n\n');
+          if (searchResults) {
+             currentSystemPrompt += `\n\n--- REAL-TIME WEB SEARCH RESULTS FOR: "${lastUserMessage}" ---\n${searchResults}\n\nUse these web search results to answer the user's latest query accurately. Cite the source URLs if helpful.`;
+             send({ type: "delta", content: "*Search complete. Analyzing data...*\n\n" });
+          } else {
+             send({ type: "delta", content: "*No relevant search results found.* \n\n" });
+          }
+        } catch (err) {
+          logger.error({ err }, "DeepSearch error");
+          send({ type: "delta", content: "*DeepSearch offline. Falling back to internal knowledge banks...*\n\n" });
+        }
+      }
+    }
+
     const stream = await openai.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: currentSystemPrompt },
         ...messages.map((m) => ({ role: m.role, content: m.content })),
       ],
       stream: true,
