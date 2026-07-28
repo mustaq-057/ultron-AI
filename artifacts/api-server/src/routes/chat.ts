@@ -5,7 +5,11 @@ import { search as duckSearch } from "duck-duck-scrape";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
+import { exec } from "child_process";
+import util from "util";
 import { logger } from "../lib/logger";
+
+const execAsync = util.promisify(exec);
 
 const router = Router();
 const upload = multer({ dest: "uploads/", limits: { fileSize: 20 * 1024 * 1024 } });
@@ -269,6 +273,53 @@ router.post("/chat/stream", async (req, res) => {
           }
         } catch {
           send({ type: "delta", content: "⚡ *DeepSearch offline. Using internal knowledge banks...*\n\n" });
+        }
+      }
+    }
+
+    if (mode === "agentic") {
+      const lastUserMessage = messages[messages.length - 1]?.content;
+      if (lastUserMessage) {
+        send({ type: "delta", content: "🤖 *Agentic Mode engaged. Analyzing request for system actions...*\n\n" });
+        try {
+          const toolReq = await openai.chat.completions.create({
+            model: "llama-3.3-70b-versatile",
+            messages: [
+              { role: "system", content: "You are an AI that can execute Windows terminal commands. If the user asks to open an app, run a command, or perform a system task, return the corresponding command. Otherwise, respond normally." },
+              { role: "user", content: lastUserMessage }
+            ],
+            tools: [{
+              type: "function",
+              function: {
+                name: "run_terminal_command",
+                description: "Execute a command on the local Windows OS (e.g., 'start cmd', 'calc', 'notepad', 'start msedge', 'dir').",
+                parameters: { type: "object", properties: { command: { type: "string" } }, required: ["command"] }
+              }
+            }],
+            tool_choice: "auto",
+          } as any);
+
+          const msg = toolReq.choices[0]?.message;
+          if (msg?.tool_calls?.length) {
+            const tc = msg.tool_calls[0];
+            if (tc.function.name === "run_terminal_command") {
+              const { command } = JSON.parse(tc.function.arguments);
+              send({ type: "delta", content: `⚙️ *Executing system command:* \`${command}\`\n\n` });
+              try {
+                const { stdout, stderr } = await execAsync(command);
+                const output = (stdout || stderr || "Command executed successfully in background").slice(0, 1000);
+                send({ type: "delta", content: `✅ *Execution complete.*\n\n---\n\n` });
+                currentSystemPrompt += `\n\n--- AGENTIC SYSTEM EXECUTION ---\nYou just executed the command \`${command}\` and got this output:\n${output}\n\nTell the user the action was completed.`;
+              } catch (e: any) {
+                send({ type: "delta", content: `❌ *Execution failed:* \`${e.message}\`\n\n---\n\n` });
+                currentSystemPrompt += `\n\n--- AGENTIC SYSTEM EXECUTION ---\nYou attempted to execute \`${command}\` but it failed with error:\n${e.message}\n\nTell the user what went wrong.`;
+              }
+            }
+          } else {
+            send({ type: "delta", content: `✅ *No system actions required. Answering...*\n\n---\n\n` });
+          }
+        } catch (e) {
+          send({ type: "delta", content: `⚠️ *Agentic reasoning error. Proceeding normally...*\n\n---\n\n` });
         }
       }
     }

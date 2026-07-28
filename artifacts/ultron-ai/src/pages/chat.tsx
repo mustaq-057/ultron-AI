@@ -549,14 +549,14 @@ export default function ChatPage() {
                           <div className="text-xs text-slate-500 pl-6">Voice & flow optimization</div>
                         </DropdownMenu.Item>
 
-                        <DropdownMenu.Item className="flex flex-col gap-0.5 px-3 py-2 rounded-lg opacity-50 cursor-not-allowed outline-none mt-1">
+                        <DropdownMenu.Item className="flex flex-col gap-0.5 px-3 py-2 rounded-lg cursor-pointer hover:bg-white/5 outline-none transition-colors mt-1" onClick={() => setMode('agentic')}>
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 font-medium text-sm text-slate-300">
+                            <div className="flex items-center gap-2 font-medium text-sm text-amber-50">
                               <Brain className="w-4 h-4 text-amber-400" /> Agentic AI
                             </div>
-                            <span className="text-[10px] uppercase tracking-wider bg-white/10 px-1.5 py-0.5 rounded text-slate-300">Soon</span>
+                            {mode === 'agentic' && <Check className="w-4 h-4 text-amber-400" />}
                           </div>
-                          <div className="text-xs text-slate-500 pl-6">Autonomous task completion</div>
+                          <div className="text-xs text-slate-400 pl-6">Executes OS terminal commands</div>
                         </DropdownMenu.Item>
 
                       </DropdownMenu.Content>
@@ -603,10 +603,11 @@ function MessageRow({ message, copiedId, onCopy, isStreaming, onSuggest, msgMode
   msgMode?: string; onRegenerate?: () => void;
 }) {
   const isUser = message.role === 'user';
-  const modeBadge = !isUser && msgMode ? {
+  const modeBadge = !isUser && msgMode ? (({
     fast: { label:'Fast', color:'text-cyan-400 bg-cyan-400/10' },
     deepsearch: { label:'DeepSearch', color:'text-purple-400 bg-purple-400/10' },
-  }[msgMode] : null;
+    agentic: { label:'Agentic AI', color:'text-amber-400 bg-amber-400/10' },
+  } as Record<string, {label: string, color: string}>)[msgMode] || null) : null;
 
   return (
     <motion.div initial={{ opacity:0, y:10 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.2 }}
