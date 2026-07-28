@@ -77,3 +77,4 @@ overrides:
 
 allowBuilds:
   esbuild: true
+  puppeteer: set this to true or false

@@ -7,6 +7,7 @@ import fs from "fs";
 import path from "path";
 import { exec } from "child_process";
 import util from "util";
+import puppeteer from "puppeteer";
 import { logger } from "../lib/logger";
 
 const execAsync = util.promisify(exec);
@@ -285,17 +286,27 @@ router.post("/chat/stream", async (req, res) => {
           const toolReq = await openai.chat.completions.create({
             model: "llama-3.3-70b-versatile",
             messages: [
-              { role: "system", content: "You are an AI that can execute Windows terminal commands. If the user asks to open an app, run a command, or perform a system task, return the corresponding command. Otherwise, respond normally." },
+              { role: "system", content: "You are an AI that can execute Windows terminal commands and perform Browser Automation using Puppeteer. If the user asks to open an app, use `run_terminal_command`. If the user asks you to interact with a website (e.g. go to chatgpt, type something, read the response), use `run_browser_automation` and write valid Puppeteer JavaScript code. The browser object is already provided as `browser` and the page as `page`. You just need to write the script logic (e.g., await page.goto('...'); const text = await page.$eval(...); return text;). Do not redefine `browser` or `page`. The script must explicitly `return` a string value of the final output." },
               { role: "user", content: lastUserMessage }
             ],
-            tools: [{
-              type: "function",
-              function: {
-                name: "run_terminal_command",
-                description: "Execute a command on the local Windows OS (e.g., 'start cmd', 'calc', 'notepad', 'start msedge', 'dir').",
-                parameters: { type: "object", properties: { command: { type: "string" } }, required: ["command"] }
+            tools: [
+              {
+                type: "function",
+                function: {
+                  name: "run_terminal_command",
+                  description: "Execute a command on the local Windows OS (e.g., 'start cmd', 'calc', 'notepad', 'start msedge', 'dir').",
+                  parameters: { type: "object", properties: { command: { type: "string" } }, required: ["command"] }
+                }
+              },
+              {
+                type: "function",
+                function: {
+                  name: "run_browser_automation",
+                  description: "Execute a Puppeteer script on a live browser. Use this to scrape, click, type, or interact with web apps. You must write valid JS code that uses the pre-initialized `page` object. It MUST return a string representing what you found or achieved.",
+                  parameters: { type: "object", properties: { scriptCode: { type: "string", description: "The puppeteer javascript code to execute. Do not redefine browser or page. Remember to `return` the final result as a string." } }, required: ["scriptCode"] }
+                }
               }
-            }],
+            ],
             tool_choice: "auto",
           } as any);
 
@@ -313,6 +324,31 @@ router.post("/chat/stream", async (req, res) => {
               } catch (e: any) {
                 send({ type: "delta", content: `❌ *Execution failed:* \`${e.message}\`\n\n---\n\n` });
                 currentSystemPrompt += `\n\n--- AGENTIC SYSTEM EXECUTION ---\nYou attempted to execute \`${command}\` but it failed with error:\n${e.message}\n\nTell the user what went wrong.`;
+              }
+            } else if (tc.function.name === "run_browser_automation") {
+              const { scriptCode } = JSON.parse(tc.function.arguments);
+              send({ type: "delta", content: `🌐 *Booting Browser Automation Engine...*\n\n\`\`\`javascript\n${scriptCode}\n\`\`\`\n\n` });
+              
+              let browserInstance = null;
+              try {
+                browserInstance = await puppeteer.launch({ headless: false, defaultViewport: null });
+                const page = await browserInstance.newPage();
+                
+                // Wrap code in an async function to allow await and return
+                const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+                const executor = new AsyncFunction('browser', 'page', scriptCode);
+                
+                const result = await executor(browserInstance, page);
+                
+                send({ type: "delta", content: `✅ *Automation completed.*\n\n---\n\n` });
+                currentSystemPrompt += `\n\n--- AGENTIC BROWSER AUTOMATION ---\nYou just executed a web automation script and it returned this result:\n${result}\n\nSummarize the result for the user in a natural way.`;
+              } catch (e: any) {
+                send({ type: "delta", content: `❌ *Automation failed:* \`${e.message}\`\n\n---\n\n` });
+                currentSystemPrompt += `\n\n--- AGENTIC BROWSER AUTOMATION ---\nYou attempted a web automation script but it failed with error:\n${e.message}\n\nTell the user what went wrong.`;
+              } finally {
+                if (browserInstance) {
+                  await browserInstance.close();
+                }
               }
             }
           } else {
