@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Orbitron:wght@400;500;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Orbitron:wght@400;500;700;900&family=Share+Tech+Mono&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
@@ -11,35 +11,27 @@
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
-
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
   --color-card-border: hsl(var(--card-border));
-
   --color-popover: hsl(var(--popover));
   --color-popover-foreground: hsl(var(--popover-foreground));
   --color-popover-border: hsl(var(--popover-border));
-
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
   --color-primary-border: var(--primary-border);
-
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
   --color-secondary-border: var(--secondary-border);
-
   --color-muted: hsl(var(--muted));
   --color-muted-foreground: hsl(var(--muted-foreground));
   --color-muted-border: var(--muted-border);
-
   --color-accent: hsl(var(--accent));
   --color-accent-foreground: hsl(var(--accent-foreground));
   --color-accent-border: var(--accent-border);
-
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
   --color-destructive-border: var(--destructive-border);
-
   --color-sidebar: hsl(var(--sidebar));
   --color-sidebar-foreground: hsl(var(--sidebar-foreground));
   --color-sidebar-border: hsl(var(--sidebar-border));
@@ -50,12 +42,10 @@
   --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
   --color-sidebar-accent-border: var(--sidebar-accent-border);
   --color-sidebar-ring: hsl(var(--sidebar-ring));
-
   --font-sans: var(--app-font-sans);
   --font-serif: var(--app-font-serif);
   --font-mono: var(--app-font-mono);
   --font-display: var(--app-font-display);
-
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -63,132 +53,94 @@
 }
 
 :root {
-  /* Using dark mode colors exclusively since ULTRON is inherently dark */
-  --background: 240 33% 3%; /* #05050a */
-  --foreground: 240 5% 90%; 
-  
-  --border: 240 10% 15%;
-  --input: 240 10% 15%;
-  --ring: 351 100% 56%; /* Ultron Red */
-  
-  --card: 240 20% 5%;
-  --card-foreground: 240 5% 90%;
-  --card-border: 240 10% 15%;
-  
-  --popover: 240 20% 5%;
-  --popover-foreground: 240 5% 90%;
-  --popover-border: 240 10% 15%;
-  
-  --primary: 351 100% 56%; /* #ff2040 */
-  --primary-foreground: 0 0% 100%;
-  
-  --secondary: 240 15% 12%;
-  --secondary-foreground: 240 5% 90%;
-  
-  --muted: 240 10% 15%;
-  --muted-foreground: 240 10% 60%;
-  
-  --accent: 351 100% 56%;
+  /* Deep indigo-black base, electric cyan accent */
+  --background: 240 50% 4%;       /* #06060f */
+  --foreground: 200 20% 95%;      /* near white */
+  --border: 220 40% 14%;
+  --input: 220 40% 10%;
+  --ring: 190 100% 50%;           /* cyan */
+
+  --card: 230 45% 6%;
+  --card-foreground: 200 20% 92%;
+  --card-border: 220 40% 12%;
+
+  --popover: 230 45% 6%;
+  --popover-foreground: 200 20% 92%;
+  --popover-border: 220 40% 12%;
+
+  --primary: 190 100% 50%;        /* #00e5ff electric cyan */
+  --primary-foreground: 230 50% 5%;
+
+  --secondary: 260 50% 18%;       /* indigo */
+  --secondary-foreground: 200 20% 90%;
+
+  --muted: 230 40% 10%;
+  --muted-foreground: 220 20% 55%;
+
+  --accent: 270 60% 55%;          /* purple */
   --accent-foreground: 0 0% 100%;
-  
-  --destructive: 0 100% 40%;
+
+  --destructive: 0 80% 55%;
   --destructive-foreground: 0 0% 100%;
-  
-  --sidebar: 240 20% 4%;
-  --sidebar-foreground: 240 5% 85%;
-  --sidebar-border: 240 15% 10%;
-  --sidebar-primary: 351 100% 56%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 240 15% 10%;
-  --sidebar-accent-foreground: 240 5% 95%;
-  --sidebar-ring: 351 100% 56%;
-  
+
+  --sidebar: 235 50% 5%;
+  --sidebar-foreground: 200 20% 85%;
+  --sidebar-border: 220 40% 12%;
+  --sidebar-primary: 190 100% 50%;
+  --sidebar-primary-foreground: 230 50% 5%;
+  --sidebar-accent: 260 50% 16%;
+  --sidebar-accent-foreground: 200 20% 90%;
+  --sidebar-ring: 190 100% 50%;
+
   --app-font-sans: 'Inter', sans-serif;
   --app-font-display: 'Orbitron', sans-serif;
   --app-font-serif: Georgia, serif;
-  --app-font-mono: Menlo, monospace;
-  
-  --radius: 0.25rem;
+  --app-font-mono: 'Share Tech Mono', monospace;
+
+  --radius: 0.125rem;
+
+  --primary-border: hsl(190 100% 40%);
+  --secondary-border: hsl(260 50% 24%);
+  --muted-border: hsl(230 40% 14%);
+  --accent-border: hsl(270 60% 45%);
+  --destructive-border: hsl(0 80% 45%);
+  --sidebar-primary-border: hsl(190 100% 40%);
+  --sidebar-accent-border: hsl(260 50% 22%);
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
-
-  body {
-    @apply font-sans antialiased bg-background text-foreground;
-  }
+  * { @apply border-border; }
+  body { @apply font-sans antialiased bg-background text-foreground; }
 }
 
-/* Custom Utilities for Ultron Vibe */
 @layer utilities {
-  .font-display {
-    font-family: var(--app-font-display);
+  .font-display { font-family: var(--app-font-display); }
+
+  /* Cyan glow utilities */
+  .text-glow-cyan {
+    text-shadow: 0 0 12px rgba(0,229,255,0.8), 0 0 30px rgba(0,229,255,0.4);
   }
-  
-  .text-glow {
-    text-shadow: 0 0 10px rgba(255, 32, 64, 0.6), 0 0 20px rgba(255, 32, 64, 0.4);
+  .box-glow-cyan {
+    box-shadow: 0 0 20px rgba(0,229,255,0.25), inset 0 0 20px rgba(0,229,255,0.06);
   }
-  
-  .box-glow {
-    box-shadow: 0 0 15px rgba(255, 32, 64, 0.3), inset 0 0 10px rgba(255, 32, 64, 0.1);
+  .border-glow-cyan {
+    box-shadow: 0 0 0 1px rgba(0,229,255,0.5), 0 0 16px rgba(0,229,255,0.2);
   }
 
-  .box-glow-strong {
-    box-shadow: 0 0 25px rgba(255, 32, 64, 0.5), inset 0 0 15px rgba(255, 32, 64, 0.2);
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(0,229,255,0.15);
+    border-radius: 2px;
   }
-
-  .scanline {
-    position: relative;
-    overflow: hidden;
-  }
-  
-  .scanline::after {
-    content: " ";
-    display: block;
-    position: absolute;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    right: 0;
-    background: linear-gradient(
-      to bottom,
-      rgba(255, 255, 255, 0),
-      rgba(255, 255, 255, 0) 50%,
-      rgba(0, 0, 0, 0.1) 50%,
-      rgba(0, 0, 0, 0.1)
-    );
-    background-size: 100% 4px;
-    z-index: 10;
-    pointer-events: none;
-    opacity: 0.3;
-  }
-
-  .bg-grid {
-    background-size: 40px 40px;
-    background-image: 
-      linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  }
-  
-  .bg-hex {
-    background-color: #05050a;
-    background-image: url("data:image/svg+xml,%3Csvg width='40' height='69.28203230275509' viewBox='0 0 40 69.28203230275509' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%231a1a24' fill-opacity='0.15' fill-rule='evenodd'%3E%3Cpath d='M40 17.3205081L20 5.77350269 0 17.3205081V40.4145188L20 51.9615242 40 40.4145188V17.3205081zm-2 1.1547005l-18-10.3923048-18 10.3923048v21.9393102l18 10.3923048 18-10.3923048V18.4752086z'/%3E%3Cpath d='M20 51.9615242l-20 11.5470054V69.2820323h40v-5.7735027L20 51.9615242zm-18 10.3923048l18-10.3923048 18 10.3923048v4.6188022H2v-4.6188022z'/%3E%3C/g%3E%3C/svg%3E");
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(0,229,255,0.35);
   }
 }
 
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-  }
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(255, 32, 64, 0.2);
-    border-radius: 10px;
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 32, 64, 0.5);
-  }
-
+/* Keyframe for scanning line */
+@keyframes scan {
+  0%   { top: 10%; }
+  100% { top: 90%; }
+}
