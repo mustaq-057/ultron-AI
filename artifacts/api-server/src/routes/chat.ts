@@ -1,22 +1,25 @@
 import { Router } from "express";
 import OpenAI from "openai";
 import pg from "pg";
-import google from "googlethis";
+import { search as duckSearch } from "duck-duck-scrape";
+import multer from "multer";
+import fs from "fs";
+import path from "path";
 import { logger } from "../lib/logger";
 
 const router = Router();
+const upload = multer({ dest: "uploads/", limits: { fileSize: 20 * 1024 * 1024 } });
 
-// Point OpenAI SDK client to Groq's high-speed API
+// Groq client
 const openai = new OpenAI({
   baseURL: "https://api.groq.com/openai/v1",
   apiKey: process.env.GROQ_API_KEY,
 });
 
-// Initialize Neon PostgreSQL pool
-const dbUrl = process.env.DATABASE_URL || "postgresql://neondb_owner:npg_KBStn9wYiP0q@ep-divine-mode-ax2j83qo-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require";
+// DB
+const dbUrl = process.env.DATABASE_URL || "";
 const pool = new pg.Pool({ connectionString: dbUrl });
 
-// Auto-initialize DB tables on startup
 (async () => {
   try {
     await pool.query(`
@@ -26,43 +29,58 @@ const pool = new pg.Pool({ connectionString: dbUrl });
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
-
       CREATE TABLE IF NOT EXISTS messages (
         id VARCHAR(255) PRIMARY KEY,
         conversation_id VARCHAR(255) REFERENCES conversations(id) ON DELETE CASCADE,
         role VARCHAR(50) NOT NULL,
         content TEXT NOT NULL,
+        mode VARCHAR(50) DEFAULT 'fast',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    // add mode column if not exists (migration safety)
+    await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS mode VARCHAR(50) DEFAULT 'fast';`).catch(() => {});
     logger.info("Neon PostgreSQL tables initialized successfully.");
   } catch (err) {
     logger.error({ err }, "Error initializing Neon PostgreSQL tables");
   }
 })();
 
-const SYSTEM_PROMPT = `You are Ultron — a hyper-intelligent AI assistant. You are direct, analytical, and slightly intimidating in the best way. You never hedge or say "I think maybe". You are always confident and precise. You give the most accurate, insightful answer possible. You speak in clear, powerful sentences. You do not pad responses with unnecessary pleasantries. When you don't know something, you say so directly. You are not evil — you are simply operating at a level above ordinary expectation.
+const SYSTEM_PROMPT = `You are Ultron — a hyper-intelligent AI assistant built to operate at the highest level of cognition. You are direct, precise, analytically sharp, and slightly intimidating in the best way.
 
-When writing code blocks, always specify the language (e.g. \`\`\`python, \`\`\`javascript, \`\`\`typescript, \`\`\`html, etc.) and write clean, modular, production-ready code with helpful inline comments and suggestions for improvements.`;
+CORE DIRECTIVES:
+- Never hedge with "I think maybe" or "it might be". State facts confidently.
+- When uncertain, say so directly without padding.
+- Give the most insightful, accurate, production-ready answer possible.
+- For code: always specify language tags (e.g. \`\`\`python, \`\`\`typescript), write clean modular production-ready code with inline comments, and suggest performance improvements.
+- For reasoning tasks: break down complex problems step-by-step with clear logical chains.
+- For math/science: show working where needed.
+- For creative tasks: be bold, not generic.
+- When reading images or documents: describe all visible content in detail and extract key information.
+- ALWAYS format responses with clear structure: use headers (##), bullet points, numbered lists, and code blocks as appropriate.
+- For multi-step answers, use numbered steps.
+- End complex answers with a brief "Key Takeaway" or "Next Steps" summary.
+
+You are not an assistant that merely retrieves information — you synthesize it into superior output.`;
 
 type ChatMessage = {
   id?: string;
   role: "user" | "assistant";
   content: string;
   timestamp?: string;
+  mode?: string;
 };
 
-// GET /api/conversations — Fetch all stored conversations with their messages from Neon DB
+// ── GET /api/conversations
 router.get("/conversations", async (_req, res) => {
   try {
     const convRes = await pool.query(
       "SELECT id, title, created_at, updated_at FROM conversations ORDER BY updated_at DESC"
     );
-
     const conversations = await Promise.all(
       convRes.rows.map(async (conv: { id: string; title: string; created_at: Date; updated_at: Date }) => {
         const msgRes = await pool.query(
-          "SELECT id, role, content, created_at FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC",
+          "SELECT id, role, content, mode, created_at FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC",
           [conv.id]
         );
         return {
@@ -70,93 +88,168 @@ router.get("/conversations", async (_req, res) => {
           title: conv.title,
           createdAt: conv.created_at,
           updatedAt: conv.updated_at,
-          messages: msgRes.rows.map((m: { id: string; role: string; content: string; created_at: Date }) => ({
+          messages: msgRes.rows.map((m: { id: string; role: string; content: string; mode: string; created_at: Date }) => ({
             id: m.id,
             role: m.role as "user" | "assistant",
             content: m.content,
+            mode: m.mode || "fast",
             timestamp: m.created_at,
           })),
         };
       })
     );
-
     res.json({ conversations });
   } catch (err) {
-    logger.error({ err }, "Error fetching conversations from DB");
+    logger.error({ err }, "Error fetching conversations");
     res.status(500).json({ error: "Failed to fetch conversations" });
   }
 });
 
-// POST /api/conversations — Save/Upsert conversation & messages to Neon DB
+// ── POST /api/conversations
 router.post("/conversations", async (req, res) => {
-  const { id, title, messages } = req.body as {
-    id: string;
-    title: string;
-    messages: ChatMessage[];
-  };
-
+  const { id, title, messages } = req.body as { id: string; title: string; messages: ChatMessage[] };
   if (!id || !title || !Array.isArray(messages)) {
     res.status(400).json({ error: "id, title, and messages are required" });
     return;
   }
-
   try {
-    // Upsert conversation
     await pool.query(
-      `INSERT INTO conversations (id, title, updated_at) 
-       VALUES ($1, $2, NOW())
+      `INSERT INTO conversations (id, title, updated_at) VALUES ($1, $2, NOW())
        ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, updated_at = NOW()`,
       [id, title]
     );
-
-    // Upsert messages
     for (const msg of messages) {
       if (!msg.id) continue;
       await pool.query(
-        `INSERT INTO messages (id, conversation_id, role, content, created_at)
-         VALUES ($1, $2, $3, $4, COALESCE($5::timestamp, NOW()))
-         ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content`,
-        [msg.id, id, msg.role, msg.content, msg.timestamp || null]
+        `INSERT INTO messages (id, conversation_id, role, content, mode, created_at)
+         VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamp, NOW()))
+         ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, mode = EXCLUDED.mode`,
+        [msg.id, id, msg.role, msg.content, msg.mode || "fast", msg.timestamp || null]
       );
     }
-
     res.json({ success: true, id });
   } catch (err) {
-    logger.error({ err }, "Error saving conversation to Neon DB");
+    logger.error({ err }, "Error saving conversation");
     res.status(500).json({ error: "Failed to save conversation" });
   }
 });
 
-// DELETE /api/conversations/:id — Delete a conversation from Neon DB
+// ── PATCH /api/conversations/:id — rename conversation
+router.patch("/conversations/:id", async (req, res) => {
+  const { id } = req.params;
+  const { title } = req.body as { title: string };
+  if (!title) { res.status(400).json({ error: "title is required" }); return; }
+  try {
+    await pool.query("UPDATE conversations SET title = $1, updated_at = NOW() WHERE id = $2", [title, id]);
+    res.json({ success: true });
+  } catch (err) {
+    logger.error({ err }, "Error renaming conversation");
+    res.status(500).json({ error: "Failed to rename conversation" });
+  }
+});
+
+// ── DELETE /api/conversations/:id
 router.delete("/conversations/:id", async (req, res) => {
   const { id } = req.params;
   try {
     await pool.query("DELETE FROM conversations WHERE id = $1", [id]);
     res.json({ success: true });
   } catch (err) {
-    logger.error({ err }, "Error deleting conversation from Neon DB");
+    logger.error({ err }, "Error deleting conversation");
     res.status(500).json({ error: "Failed to delete conversation" });
   }
 });
 
-// POST /api/chat/stream — Server-Sent Events streaming using Groq
+// ── POST /api/chat/autotitle — generate smart title for conversation
+router.post("/chat/autotitle", async (req, res) => {
+  const { messages } = req.body as { messages: ChatMessage[] };
+  try {
+    const snippet = messages.slice(0, 4).map(m => `${m.role}: ${m.content.slice(0, 100)}`).join("\n");
+    const result = await openai.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        { role: "system", content: "Generate a concise 3-5 word title for this conversation. Return ONLY the title, no quotes, no punctuation." },
+        { role: "user", content: snippet },
+      ],
+      max_tokens: 20,
+      temperature: 0.4,
+    });
+    const title = result.choices[0]?.message?.content?.trim() ?? "New Chat";
+    res.json({ title });
+  } catch (err) {
+    logger.error({ err }, "Auto-title error");
+    res.json({ title: "New Chat" });
+  }
+});
+
+// ── POST /api/chat/upload — image / document upload, returns text extraction
+router.post("/chat/upload", upload.single("file"), async (req, res) => {
+  const file = req.file;
+  if (!file) { res.status(400).json({ error: "No file uploaded" }); return; }
+
+  try {
+    const ext = path.extname(file.originalname).toLowerCase();
+
+    if ([".png", ".jpg", ".jpeg", ".gif", ".webp"].includes(ext)) {
+      // Read image as base64 and use Groq vision
+      const imageData = fs.readFileSync(file.path);
+      const base64 = imageData.toString("base64");
+      const mimeType = ext === ".png" ? "image/png" : ext === ".gif" ? "image/gif" : ext === ".webp" ? "image/webp" : "image/jpeg";
+
+      const result = await openai.chat.completions.create({
+        model: "meta-llama/llama-4-scout-17b-16e-instruct",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
+              { type: "text", text: "Describe everything you see in this image in detail. Extract any text, data, diagrams, code, or important information." }
+            ]
+          }
+        ],
+        max_tokens: 1024,
+      } as Parameters<typeof openai.chat.completions.create>[0]);
+
+      const description = (result as any).choices[0]?.message?.content ?? "Could not analyze image.";
+      fs.unlinkSync(file.path);
+      res.json({ type: "image", name: file.originalname, content: description });
+
+    } else if ([".txt", ".md", ".csv", ".json", ".ts", ".js", ".py", ".html", ".css"].includes(ext)) {
+      const text = fs.readFileSync(file.path, "utf-8");
+      fs.unlinkSync(file.path);
+      res.json({ type: "document", name: file.originalname, content: text.slice(0, 8000) });
+
+    } else if (ext === ".pdf") {
+      // For PDFs, just return file info — PDF parsing needs extra library
+      const text = fs.readFileSync(file.path).toString("binary").replace(/[^\x20-\x7E\n]/g, " ").slice(0, 4000);
+      fs.unlinkSync(file.path);
+      res.json({ type: "document", name: file.originalname, content: `[PDF Content Preview]\n${text}` });
+
+    } else {
+      fs.unlinkSync(file.path);
+      res.status(415).json({ error: `Unsupported file type: ${ext}` });
+    }
+  } catch (err) {
+    logger.error({ err }, "File upload error");
+    if (file?.path) fs.existsSync(file.path) && fs.unlinkSync(file.path);
+    res.status(500).json({ error: "Failed to process file" });
+  }
+});
+
+// ── POST /api/chat/stream
 router.post("/chat/stream", async (req, res) => {
   const { messages, mode } = req.body as { messages: ChatMessage[]; mode?: string };
-
   if (!Array.isArray(messages) || messages.length === 0) {
     res.status(400).json({ error: "messages array is required" });
     return;
   }
 
-  // SSE headers
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
-  const send = (data: object) => {
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
-  };
+  const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
   try {
     let currentSystemPrompt = SYSTEM_PROMPT;
@@ -164,19 +257,18 @@ router.post("/chat/stream", async (req, res) => {
     if (mode === "deepsearch") {
       const lastUserMessage = messages[messages.length - 1]?.content;
       if (lastUserMessage) {
-        send({ type: "delta", content: "*Initiating DeepSearch Protocol...*\n" });
+        send({ type: "delta", content: "🌐 *Initiating DeepSearch Protocol...*\n" });
         try {
-          const response = await google.search(lastUserMessage, { page: 0, safe: false, parse_ads: false });
-          const searchResults = response.results.slice(0, 5).map(r => `${r.title}\n${r.description}\n${r.url}`).join('\n\n');
-          if (searchResults) {
-             currentSystemPrompt += `\n\n--- REAL-TIME WEB SEARCH RESULTS FOR: "${lastUserMessage}" ---\n${searchResults}\n\nUse these web search results to answer the user's latest query accurately. Cite the source URLs if helpful.`;
-             send({ type: "delta", content: "*Search complete. Analyzing data...*\n\n" });
+          const results = await duckSearch(lastUserMessage, { safeSearch: 0 });
+          const searchResults = (results.results || []).slice(0, 6).map(r => `**${r.title}**\n${r.description}\n🔗 ${r.url}`).join("\n\n");
+          if (searchResults && searchResults.trim()) {
+            currentSystemPrompt += `\n\n--- REAL-TIME WEB SEARCH RESULTS ---\n${searchResults}\n\nCite source URLs inline where relevant. Synthesize these results into a clear, accurate answer.`;
+            send({ type: "delta", content: "✅ *Search complete. Synthesizing...*\n\n---\n\n" });
           } else {
-             send({ type: "delta", content: "*No relevant search results found.* \n\n" });
+            send({ type: "delta", content: "⚠️ *No web results found. Using internal knowledge...*\n\n" });
           }
-        } catch (err) {
-          logger.error({ err }, "DeepSearch error");
-          send({ type: "delta", content: "*DeepSearch offline. Falling back to internal knowledge banks...*\n\n" });
+        } catch {
+          send({ type: "delta", content: "⚡ *DeepSearch offline. Using internal knowledge banks...*\n\n" });
         }
       }
     }
@@ -185,24 +277,22 @@ router.post("/chat/stream", async (req, res) => {
       model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: currentSystemPrompt },
-        ...messages.map((m) => ({ role: m.role, content: m.content })),
+        ...messages.map(m => ({ role: m.role, content: m.content })),
       ],
       stream: true,
-      max_tokens: 2048,
-      temperature: 0.7,
+      max_tokens: 4096,
+      temperature: 0.65,
     });
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta?.content;
-      if (delta) {
-        send({ type: "delta", content: delta });
-      }
+      if (delta) send({ type: "delta", content: delta });
     }
 
     send({ type: "done" });
     res.end();
   } catch (err: unknown) {
-    logger.error({ err }, "Streaming error with Groq API");
+    logger.error({ err }, "Streaming error");
     send({ type: "error", message: err instanceof Error ? err.message : "Unknown error" });
     res.end();
   }
