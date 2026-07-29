@@ -323,7 +323,7 @@ router.post("/chat/stream", async (req, res) => {
 
           const msg = toolReq.choices[0]?.message;
           if (msg?.tool_calls?.length) {
-            const tc = msg.tool_calls[0];
+            const tc = msg.tool_calls[0] as any;
             let args: any = {};
             try { args = JSON.parse(tc.function.arguments); } catch(e) { args = { command: tc.function.arguments, scriptCode: tc.function.arguments }; }
 
