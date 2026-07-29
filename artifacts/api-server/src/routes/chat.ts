@@ -318,7 +318,7 @@ router.post("/chat/stream", async (req, res) => {
                 }
               }
             ],
-            // tool_choice: "auto", // Omitted to let Groq infer naturally without forcing
+            tool_choice: "auto",
           } as any);
 
           const msg = toolReq.choices[0]?.message;
