@@ -231,6 +231,9 @@ export default function ChatPage() {
           if (data.type === 'delta') {
             fullContent += data.content;
             setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: fullContent } : m));
+          } else if (data.type === 'replace') {
+            fullContent = data.content;
+            setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: fullContent } : m));
           } else if (data.type === 'error') {
             throw new Error(data.message);
           }

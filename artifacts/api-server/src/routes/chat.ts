@@ -257,19 +257,19 @@ router.post("/chat/stream", async (req, res) => {
     if (mode === "deepsearch") {
       const lastUserMessage = messages[messages.length - 1]?.content;
       if (lastUserMessage) {
-        send({ type: "delta", content: "🌐 *Initiating DeepSearch Protocol...*\n" });
+        send({ type: "delta", content: "_🌐 Initiating DeepSearch Protocol..._\n\n" });
         try {
-          const res = await fetch(`https://search.yahoo.com/search?p=${encodeURIComponent(lastUserMessage)}`, {
+          const res = await fetch(`https://www.bing.com/search?q=${encodeURIComponent(lastUserMessage)}`, {
             headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36" }
           });
           const html = await res.text();
           const $ = cheerio.load(html);
           const searchResults: string[] = [];
           
-          $('.algo-sr').each((_, el) => {
-            const title = $(el).find('.title a').text();
-            const url = $(el).find('.title a').attr('href');
-            const desc = $(el).find('.compText').text();
+          $('.b_algo').each((_, el) => {
+            const title = $(el).find('h2 a').text();
+            const url = $(el).find('h2 a').attr('href');
+            const desc = $(el).find('.b_caption p, .b_algoSlug').text();
             if (title && url) {
               searchResults.push(`**${title}**\n${desc}\n🔗 ${url}`);
             }
@@ -279,12 +279,12 @@ router.post("/chat/stream", async (req, res) => {
           
           if (formattedResults && formattedResults.trim()) {
             currentSystemPrompt += `\n\n--- REAL-TIME WEB SEARCH RESULTS ---\n${formattedResults}\n\nCite source URLs inline where relevant. Synthesize these results into a clear, accurate answer.`;
-            send({ type: "delta", content: "✅ *Search complete. Synthesizing...*\n\n---\n\n" });
+            send({ type: "delta", content: "_✅ Search complete. Synthesizing..._\n\n" });
           } else {
-            send({ type: "delta", content: "⚠️ *No web results found. Using internal knowledge...*\n\n" });
+            send({ type: "delta", content: "_⚠️ No web results found. Using internal knowledge..._\n\n" });
           }
         } catch {
-          send({ type: "delta", content: "⚡ *DeepSearch offline. Using internal knowledge banks...*\n\n" });
+          send({ type: "delta", content: "_⚡ DeepSearch offline. Using internal knowledge banks..._\n\n" });
         }
       }
     }
@@ -292,7 +292,7 @@ router.post("/chat/stream", async (req, res) => {
     if (mode === "agentic") {
       const lastUserMessage = messages[messages.length - 1]?.content;
       if (lastUserMessage) {
-        send({ type: "delta", content: "🤖 *Agentic Mode engaged. Analyzing request for system actions...*\n\n" });
+        send({ type: "delta", content: "_🤖 Agentic Mode engaged. Analyzing request..._\n\n" });
         try {
           const toolReq = await openai.chat.completions.create({
             model: "llama-3.3-70b-versatile",
@@ -329,19 +329,19 @@ router.post("/chat/stream", async (req, res) => {
 
             if (tc.function.name === "run_terminal_command") {
               const command = args.command || "";
-              send({ type: "delta", content: `⚙️ *Executing system command:* \`${command}\`\n\n` });
+              send({ type: "delta", content: `_⚙️ Executing system command:_ \`${command}\`\n\n` });
               try {
                 const { stdout, stderr } = await execAsync(command);
                 const output = (stdout || stderr || "Command executed successfully in background").slice(0, 1000);
-                send({ type: "delta", content: `✅ *Execution complete.*\n\n---\n\n` });
+                send({ type: "delta", content: `_✅ Execution complete._\n\n` });
                 currentSystemPrompt += `\n\n--- AGENTIC SYSTEM EXECUTION ---\nYou just executed the command \`${command}\` and got this output:\n${output}\n\nTell the user the action was completed.`;
               } catch (e: any) {
-                send({ type: "delta", content: `❌ *Execution failed:* \`${e.message}\`\n\n---\n\n` });
+                send({ type: "delta", content: `_❌ Execution failed:_ \`${e.message}\`\n\n` });
                 currentSystemPrompt += `\n\n--- AGENTIC SYSTEM EXECUTION ---\nYou attempted to execute \`${command}\` but it failed with error:\n${e.message}\n\nTell the user what went wrong.`;
               }
             } else if (tc.function.name === "run_browser_automation") {
               const scriptCode = args.scriptCode || "";
-              send({ type: "delta", content: `🌐 *Booting Browser Automation Engine...*\n\n\`\`\`javascript\n${scriptCode}\n\`\`\`\n\n` });
+              send({ type: "delta", content: `_🌐 Booting Browser Automation Engine..._\n\n\`\`\`javascript\n${scriptCode}\n\`\`\`\n\n` });
               
               let browserInstance = null;
               try {
@@ -354,10 +354,10 @@ router.post("/chat/stream", async (req, res) => {
                 
                 const result = await executor(browserInstance, page);
                 
-                send({ type: "delta", content: `✅ *Automation completed.*\n\n---\n\n` });
+                send({ type: "delta", content: `_✅ Automation completed._\n\n` });
                 currentSystemPrompt += `\n\n--- AGENTIC BROWSER AUTOMATION ---\nYou just executed a web automation script and it returned this result:\n${result}\n\nSummarize the result for the user in a natural way.`;
               } catch (e: any) {
-                send({ type: "delta", content: `❌ *Automation failed:* \`${e.message}\`\n\n---\n\n` });
+                send({ type: "delta", content: `_❌ Automation failed:_ \`${e.message}\`\n\n` });
                 currentSystemPrompt += `\n\n--- AGENTIC BROWSER AUTOMATION ---\nYou attempted a web automation script but it failed with error:\n${e.message}\n\nTell the user what went wrong.`;
               } finally {
                 if (browserInstance) {
@@ -366,13 +366,18 @@ router.post("/chat/stream", async (req, res) => {
               }
             }
           } else {
-            send({ type: "delta", content: `✅ *No system actions required. Answering...*\n\n---\n\n` });
+            send({ type: "delta", content: "_✅ No system actions required. Answering..._\n\n" });
           }
         } catch (e) {
           logger.error({ err: e }, "Agentic reasoning error");
-          send({ type: "delta", content: `⚠️ *Agentic reasoning error. Proceeding normally...*\n\n---\n\n` });
+          send({ type: "delta", content: "_⚠️ Agentic reasoning error. Proceeding normally..._\n\n" });
         }
       }
+    }
+
+    // Wipe UI statuses before streaming final answer
+    if (mode === "deepsearch" || mode === "agentic") {
+      send({ type: "replace", content: "" });
     }
 
     const stream = await openai.chat.completions.create({
