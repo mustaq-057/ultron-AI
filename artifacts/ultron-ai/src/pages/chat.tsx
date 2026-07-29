@@ -152,13 +152,15 @@ export default function ChatPage() {
   }, []);
 
   const regenerate = useCallback(() => {
-    const lastUser = [...messages].reverse().find(m => m.role === 'user');
-    if (!lastUser || streaming) return;
-    setMessages(prev => prev.slice(0, prev.lastIndexOf(prev.find(m => m.role === 'assistant' && prev.indexOf(m) > prev.indexOf(lastUser))!) ));
-    send(lastUser.content);
+    const lastUserIndex = [...messages].reverse().findIndex(m => m.role === 'user');
+    if (lastUserIndex === -1 || streaming) return;
+    const realIndex = messages.length - 1 - lastUserIndex;
+    const lastUser = messages[realIndex];
+    const previousMessages = messages.slice(0, realIndex);
+    send(lastUser.content, previousMessages);
   }, [messages, streaming]);
 
-  const send = useCallback(async (text: string) => {
+  const send = useCallback(async (text: string, overrideHistory?: Message[]) => {
     let content = text.trim();
     if (!content && !uploadedFile) return;
     if (streaming) return;
@@ -174,7 +176,8 @@ export default function ChatPage() {
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
     const userMsg: Message = { id: makeId(), role: 'user', content, timestamp: new Date() };
-    const newMessages = [...messages, userMsg];
+    const baseMessages = overrideHistory || messages;
+    const newMessages = [...baseMessages, userMsg];
     setMessages(newMessages);
     setStreaming(true);
 

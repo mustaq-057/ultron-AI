@@ -1,4 +1,10 @@
-import googlethis from 'googlethis';
-googlethis.search('test query', { page: 0, safe: false, parse_ads: false })
-  .then(r => { console.log('SUCCESS. Results:', r.results.slice(0,2).map(x => x.title)); process.exit(0); })
-  .catch(e => { console.error('FAIL:', e.message); process.exit(1); });
+import { search } from "duck-duck-scrape";
+
+(async () => {
+  try {
+    const results = await search("latest news", { safeSearch: 0 });
+    console.log("Success:", results.results.length);
+  } catch (e) {
+    console.error("Search failed:", e);
+  }
+})();

@@ -8,6 +8,7 @@ import path from "path";
 import { exec } from "child_process";
 import util from "util";
 import puppeteer from "puppeteer";
+import * as cheerio from "cheerio";
 import { logger } from "../lib/logger";
 
 const execAsync = util.promisify(exec);
@@ -264,10 +265,26 @@ router.post("/chat/stream", async (req, res) => {
       if (lastUserMessage) {
         send({ type: "delta", content: "🌐 *Initiating DeepSearch Protocol...*\n" });
         try {
-          const results = await duckSearch(lastUserMessage, { safeSearch: 0 });
-          const searchResults = (results.results || []).slice(0, 6).map(r => `**${r.title}**\n${r.description}\n🔗 ${r.url}`).join("\n\n");
-          if (searchResults && searchResults.trim()) {
-            currentSystemPrompt += `\n\n--- REAL-TIME WEB SEARCH RESULTS ---\n${searchResults}\n\nCite source URLs inline where relevant. Synthesize these results into a clear, accurate answer.`;
+          const res = await fetch(`https://search.yahoo.com/search?p=${encodeURIComponent(lastUserMessage)}`, {
+            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36" }
+          });
+          const html = await res.text();
+          const $ = cheerio.load(html);
+          const searchResults: string[] = [];
+          
+          $('.algo-sr').each((_, el) => {
+            const title = $(el).find('.title a').text();
+            const url = $(el).find('.title a').attr('href');
+            const desc = $(el).find('.compText').text();
+            if (title && url) {
+              searchResults.push(`**${title}**\n${desc}\n🔗 ${url}`);
+            }
+          });
+
+          const formattedResults = searchResults.slice(0, 6).join("\n\n");
+          
+          if (formattedResults && formattedResults.trim()) {
+            currentSystemPrompt += `\n\n--- REAL-TIME WEB SEARCH RESULTS ---\n${formattedResults}\n\nCite source URLs inline where relevant. Synthesize these results into a clear, accurate answer.`;
             send({ type: "delta", content: "✅ *Search complete. Synthesizing...*\n\n---\n\n" });
           } else {
             send({ type: "delta", content: "⚠️ *No web results found. Using internal knowledge...*\n\n" });
@@ -307,14 +324,17 @@ router.post("/chat/stream", async (req, res) => {
                 }
               }
             ],
-            tool_choice: "auto",
+            // tool_choice: "auto", // Omitted to let Groq infer naturally without forcing
           } as any);
 
           const msg = toolReq.choices[0]?.message;
           if (msg?.tool_calls?.length) {
             const tc = msg.tool_calls[0];
+            let args: any = {};
+            try { args = JSON.parse(tc.function.arguments); } catch(e) { args = { command: tc.function.arguments, scriptCode: tc.function.arguments }; }
+
             if (tc.function.name === "run_terminal_command") {
-              const { command } = JSON.parse(tc.function.arguments);
+              const command = args.command || "";
               send({ type: "delta", content: `⚙️ *Executing system command:* \`${command}\`\n\n` });
               try {
                 const { stdout, stderr } = await execAsync(command);
@@ -326,7 +346,7 @@ router.post("/chat/stream", async (req, res) => {
                 currentSystemPrompt += `\n\n--- AGENTIC SYSTEM EXECUTION ---\nYou attempted to execute \`${command}\` but it failed with error:\n${e.message}\n\nTell the user what went wrong.`;
               }
             } else if (tc.function.name === "run_browser_automation") {
-              const { scriptCode } = JSON.parse(tc.function.arguments);
+              const scriptCode = args.scriptCode || "";
               send({ type: "delta", content: `🌐 *Booting Browser Automation Engine...*\n\n\`\`\`javascript\n${scriptCode}\n\`\`\`\n\n` });
               
               let browserInstance = null;
@@ -355,6 +375,7 @@ router.post("/chat/stream", async (req, res) => {
             send({ type: "delta", content: `✅ *No system actions required. Answering...*\n\n---\n\n` });
           }
         } catch (e) {
+          logger.error({ err: e }, "Agentic reasoning error");
           send({ type: "delta", content: `⚠️ *Agentic reasoning error. Proceeding normally...*\n\n---\n\n` });
         }
       }
@@ -364,7 +385,23 @@ router.post("/chat/stream", async (req, res) => {
       model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: currentSystemPrompt },
-        ...messages.map(m => ({ role: m.role, content: m.content })),
+        ...messages.map(m => {
+          let clean = m.content;
+          clean = clean.replace(/🌐 \*Initiating DeepSearch Protocol\.\.\.\*\n/g, '');
+          clean = clean.replace(/✅ \*Search complete\. Synthesizing\.\.\.\*\n\n---\n\n/g, '');
+          clean = clean.replace(/⚠️ \*No web results found\. Using internal knowledge\.\.\.\*\n\n/g, '');
+          clean = clean.replace(/⚡ \*DeepSearch offline\. Using internal knowledge banks\.\.\.\*\n\n/g, '');
+          clean = clean.replace(/🤖 \*Agentic Mode engaged\. Analyzing request for system actions\.\.\.\*\n\n/g, '');
+          clean = clean.replace(/✅ \*No system actions required\. Answering\.\.\.\*\n\n---\n\n/g, '');
+          clean = clean.replace(/⚠️ \*Agentic reasoning error\. Proceeding normally\.\.\.\*\n\n---\n\n/g, '');
+          clean = clean.replace(/⚙️ \*Executing system command:\* `.*?`\n\n/g, '');
+          clean = clean.replace(/✅ \*Execution complete\.\*\n\n---\n\n/g, '');
+          clean = clean.replace(/❌ \*Execution failed:\* `.*?`\n\n---\n\n/g, '');
+          clean = clean.replace(/🌐 \*Booting Browser Automation Engine\.\.\.\*\n\n```javascript\n.*?\n```\n\n/gs, '');
+          clean = clean.replace(/✅ \*Automation completed\.\*\n\n---\n\n/g, '');
+          clean = clean.replace(/❌ \*Automation failed:\* `.*?`\n\n---\n\n/g, '');
+          return { role: m.role, content: clean.trim() };
+        }),
       ],
       stream: true,
       max_tokens: 4096,
